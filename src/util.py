@@ -1,6 +1,6 @@
 import re
 from textnode import TextNode, TextType
-from htmlnode import LeafNode
+from htmlnode import HTMLNode, LeafNode, ParentNode
 
 def text_node_to_html_node(text_node):
     tag = None
@@ -25,7 +25,7 @@ def text_node_to_html_node(text_node):
     elif text_node.text_type == TextType.IMAGE:
         tag = "img"
         val = ""
-        props = {"src": text_node.url, "alt": ""}
+        props = {"src": text_node.url, "alt": text_node.text}
     else:
         raise Exception("TextType not implemented")
 
@@ -97,7 +97,6 @@ def split_nodes_image(old_nodes):
 
     return new_nodes
 
-
 def split_nodes_link(old_nodes):
     new_nodes = []
     for node in old_nodes:
@@ -135,3 +134,97 @@ def text_to_textnodes(text):
     bolds = split_nodes_delimiter(codes, "**", TextType.BOLD)
     italics = split_nodes_delimiter(bolds, "*", TextType.ITALIC)
     return italics
+
+def markdown_to_blocks(markdown):
+    return list(map(lambda x: x.strip(), markdown.split("\n\n")))
+
+def block_to_block_type(block):
+    if block[0] == "#":
+        count = 1
+        while count < 6 and count < len(block) and block[count] != " ":
+            if block[count] != "#":
+                raise Exception("Invalid markdown syntax for heading")
+            count += 1
+        return "heading"
+    elif block.startswith("```") and block.endswith("```"):
+        return "code"
+
+    if block.startswith("> "):
+        for line in block.split("\n"):
+            if not line.startswith("> "):
+                raise Exception("Invalid markdown syntax for quote")
+        return "quote"
+    elif block.startswith("* ") or block.startswith("- "):
+        for line in block.split("\n"):
+            if not (line.startswith("* ") or line.startswith("- ")):
+                raise Exception("Invalid markdown syntax for unordered list")
+        return "unordered_list"
+    elif block.startswith("1. "):
+        lines = block.split("\n")
+        for i in range(0, len(lines)):
+            if not lines[i].startswith(f"{i+1}. "):
+                raise Exception("Invalid markdown syntax for ordered list")
+        return "ordered_list"
+    return "paragraph"
+
+def text_to_children(text):
+    return list(map(text_node_to_html_node, text_to_textnodes(text)))
+
+def markdown_to_html_node(markdown):
+    blocks = markdown_to_blocks(markdown)
+    blocks_type = []
+    for block in blocks:
+        blocks_type.append(block_to_block_type(block))
+
+    html_nodes = []
+    for i in range(0, len(blocks_type)):
+        block = blocks[i]
+        block_type = blocks_type[i]
+        if block_type == "quote":
+            # blockquote_children = []
+            # cur_p_children = []
+            # for line in block.split("\n"):
+            #     if line == "> ":
+            #         # append a <p> elemnt with the children to the blockquote children
+            #         blockquote_children.append(ParentNode("p", cur_p_children))
+            #         cur_p_children = []
+            #         continue
+            #     cur_p_children += text_to_children(line[2:])
+            #
+            # if len(cur_p_children) > 0:
+            #     # append one more <p> if len(cur_p_children) > 0
+            #     blockquote_children.append(ParentNode("p", cur_p_children))
+            #
+            html_nodes.append(LeafNode("blockquote", block.replace("> ", "")))
+        elif block_type == "unordered_list":
+            ul_children = []
+            for line in block.split("\n"):
+                ul_children.append(ParentNode("li", text_to_children(line[2:])))
+
+            html_nodes.append(ParentNode("ul", ul_children))
+        elif block_type == "ordered_list":
+            ol_children = []
+            for line in block.split("\n"):
+                ol_children.append(ParentNode("li", text_to_children(line[3:])))
+
+            html_nodes.append(ParentNode("ol", ol_children))
+        elif block_type == "code":
+            html_code = LeafNode("code", block.strip("```"))
+            html_nodes.append(ParentNode("pre", [html_code]))
+        elif block_type == "heading":
+            [h_size, text] = block.split(" ", 1)
+            html_nodes.append(ParentNode(f"h{len(h_size)}", text_to_children(text)))
+        elif block_type == "paragraph":
+            children = text_to_children(block)
+            html_nodes.append(ParentNode("p", children))
+        else:
+            raise Exception(f"Block type: {block_type}, not implemented")
+
+    return ParentNode("div", html_nodes)
+
+def extract_title(markdown):
+    blocks = markdown.split("\n\n")
+    for block in blocks:
+        if block.startswith("# "):
+            return block[2:].strip()
+    raise Exception("Markdown file must have a main '#' heading")

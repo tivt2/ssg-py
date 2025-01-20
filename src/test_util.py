@@ -1,10 +1,11 @@
 import unittest
 
 from textnode import TextNode, TextType
-from util import text_node_to_html_node, split_nodes_delimiter, extract_markdown_images, extract_markdown_links, split_nodes_image, split_nodes_link, text_to_textnodes
+from htmlnode import HTMLNode
+from util import text_node_to_html_node, split_nodes_delimiter, extract_markdown_images, extract_markdown_links, split_nodes_image, split_nodes_link, text_to_textnodes, markdown_to_blocks, block_to_block_type, text_to_children, markdown_to_html_node, extract_title
 
 class TestUtil(unittest.TestCase):
-    def test_node_to_html(self):
+    def test_text_node_to_html_node(self):
         node = TextNode("foo", TextType.LINK, "https://foo.com")
         html = text_node_to_html_node(node)
         expect = "<a href=\"https://foo.com\">foo</a>"
@@ -161,6 +162,163 @@ class TestUtil(unittest.TestCase):
             TextNode(" foo", TextType.TEXT),
         ]
         res = text_to_textnodes(text2)
+        self.assertEqual(expect, res)
+
+    def test_markdown_to_blocks(self):
+        text = """# This is a heading
+
+This is a paragraph of text. It has some **bold** and *italic* words inside of it.
+
+* This is the first list item in a list block
+* This is a list item
+* This is another list item"""
+        expect = ["# This is a heading", "This is a paragraph of text. It has some **bold** and *italic* words inside of it.", "* This is the first list item in a list block\n* This is a list item\n* This is another list item"]
+        res = markdown_to_blocks(text)
+        self.assertEqual(expect, res)
+
+    def test_block_to_block_type(self):
+        block = "# foo"
+        expect = "heading"
+        res = block_to_block_type(block)
+        self.assertEqual(expect, res)
+
+        block = "###### foo"
+        expect = "heading"
+        res = block_to_block_type(block)
+        self.assertEqual(expect, res)
+
+        block = "bar"
+        expect = "paragraph"
+        res = block_to_block_type(block)
+        self.assertEqual(expect, res)
+
+        block = "```foobar```"
+        expect = "code"
+        res = block_to_block_type(block)
+        self.assertEqual(expect, res)
+
+        block = "> foo\n> bar"
+        expect = "quote"
+        res = block_to_block_type(block)
+        self.assertEqual(expect, res)
+
+        block = "* foo\n- bar"
+        expect = "unordered_list"
+        res = block_to_block_type(block)
+        self.assertEqual(expect, res)
+
+        block = "1. foo\n2. bar"
+        expect = "ordered_list"
+        res = block_to_block_type(block)
+        self.assertEqual(expect, res)
+
+    def test_text_to_children(self):
+        text = "foo bar *italic* baz **bold** foobar"
+        expect = [
+            HTMLNode(None, "foo bar "),
+            HTMLNode("i", "italic"),
+            HTMLNode(None, " baz "),
+            HTMLNode("b", "bold"),
+            HTMLNode(None, " foobar"),
+        ]
+        res = text_to_children(text)
+        self.assertEqual(expect, res)
+
+    def test_markdown_to_html_node(self):
+        markdown = "# Foo\n\nbar *italic* baz **foobar** image ![foo](foo.jpg) and [bar](bar.png)"
+
+        expect = HTMLNode("div", None, [
+            HTMLNode("h1", None, [HTMLNode(None, "Foo")]),
+            HTMLNode("p", None, [
+                HTMLNode(None, "bar "),
+                HTMLNode("i", "italic"),
+                HTMLNode(None, " baz "),
+                HTMLNode("b", "foobar"),
+                HTMLNode(None, " image "),
+                HTMLNode("img", "", None, {"src": "foo.jpg", "alt": "foo"}),
+                HTMLNode(None, " and "),
+                HTMLNode("a", "bar", None, {"href": "bar.png"}),
+            ]),
+        ])
+        res = markdown_to_html_node(markdown)
+        self.assertEqual(expect, res)
+
+        markdown = "* item1\n- item2\n- item3\n\n1. foo\n2. bar\n3. baz"
+        expect = HTMLNode("div", None, [
+            HTMLNode("ul", None, [
+                HTMLNode("li", None, [HTMLNode(None, "item1")]),
+                HTMLNode("li", None, [HTMLNode(None, "item2")]),
+                HTMLNode("li", None, [HTMLNode(None, "item3")])
+            ]),
+            HTMLNode("ol", None, [
+                HTMLNode("li", None, [HTMLNode(None, "foo")]),
+                HTMLNode("li", None, [HTMLNode(None, "bar")]),
+                HTMLNode("li", None, [HTMLNode(None, "baz")])
+            ]),
+        ])
+        res = markdown_to_html_node(markdown)
+        self.assertEqual(expect, res)
+
+        markdown = "> quote\n> \n> in 2\n> paragraphs"
+        expect = HTMLNode("div", None, [
+            HTMLNode("blockquote", "quote\n\nin 2\nparagraphs"),
+        ])
+        res = markdown_to_html_node(markdown)
+        self.assertEqual(expect, res)
+
+        markdown = "### Another heading"
+        expect = HTMLNode("div", None, [
+            HTMLNode("h3", None, [HTMLNode(None, "Another heading")]),
+        ])
+        res = markdown_to_html_node(markdown)
+        self.assertEqual(expect, res)
+
+        markdown = "```code block```"
+        expect = HTMLNode("div", None, [
+            HTMLNode("pre", None, [HTMLNode("code", "code block")]),
+        ])
+        res = markdown_to_html_node(markdown)
+        self.assertEqual(expect, res)
+
+        markdown = "# Foo\n\nbar *italic* baz **foobar** image ![foo](foo.jpg) and [bar](bar.png)\n\n```code block```\n\n* item1\n- item2\n- item3\n\n1. foo\n2. bar\n3. baz\n\n> this is\n> a quote\n> \n> where i split\n> in 2 paragraphs\n\n### Another heading"
+        expect = HTMLNode("div", None, [
+            HTMLNode("h1", None, [HTMLNode(None, "Foo")]),
+            HTMLNode("p", None, [
+                HTMLNode(None, "bar "),
+                HTMLNode("i", "italic"),
+                HTMLNode(None, " baz "),
+                HTMLNode("b", "foobar"),
+                HTMLNode(None, " image "),
+                HTMLNode("img", "", None, {"src": "foo.jpg", "alt": "foo"}),
+                HTMLNode(None, " and "),
+                HTMLNode("a", "bar", None, {"href": "bar.png"}),
+            ]),
+            HTMLNode("pre", None, [HTMLNode("code", "code block")]),
+            HTMLNode("ul", None, [
+                HTMLNode("li", None, [HTMLNode(None, "item1")]),
+                HTMLNode("li", None, [HTMLNode(None, "item2")]),
+                HTMLNode("li", None, [HTMLNode(None, "item3")])
+            ]),
+            HTMLNode("ol", None, [
+                HTMLNode("li", None, [HTMLNode(None, "foo")]),
+                HTMLNode("li", None, [HTMLNode(None, "bar")]),
+                HTMLNode("li", None, [HTMLNode(None, "baz")])
+            ]),
+            HTMLNode("blockquote", "this is\na quote\n\nwhere i split\nin 2 paragraphs"),
+            HTMLNode("h3", None, [HTMLNode(None, "Another heading")]),
+        ])
+        res = markdown_to_html_node(markdown)
+        self.assertEqual(expect, res)
+
+    def test_extract_title(self):
+        markdown = "# Hello"
+        expect = "Hello"
+        res = extract_title(markdown)
+        self.assertEqual(expect, res)
+
+        markdown = "Hello\n\n- Foo\n- Bar\n\n# World"
+        expect = "World"
+        res = extract_title(markdown)
         self.assertEqual(expect, res)
 
 
